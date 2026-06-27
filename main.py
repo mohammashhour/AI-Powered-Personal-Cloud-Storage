@@ -122,7 +122,10 @@ async def signup(
     )
     conn.commit()
     
-    return {"message": "signup successful"}
+    return templates.TemplateResponse(
+        request=request,
+        name="Dashboard.html" 
+    )
 
 
 @app.post("/login")
@@ -156,4 +159,7 @@ async def login(
             name="login.html",
             context={"error": "ERROR Invalid username or password"}
         )
-    return {"message": "Login successful"}
+    return templates.TemplateResponse(
+        request=request,
+        name="Dashboard.html" 
+    )
