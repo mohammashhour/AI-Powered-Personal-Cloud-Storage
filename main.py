@@ -33,17 +33,22 @@ CREATE TABLE IF NOT EXISTS users (
 )
 """)
 
-"""
-cursor.execute(
-CREATE TABLE IF NOT EXISTS maps (
-    map_id INTEGER PRIMARY KEY AUTOINCREMENT,
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS userdata (
+    data_id INTEGER PRIMARY KEY ,
     user_id INTEGER NOT NULL,
-    location TEXT NOT NULL,
-    counter INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY(user_id) REFERENCES users(user_id)
+    FOREIGN KEY(user_id) REFERENCES users(user_id),
+    FOREIGN KEY(data_id) REFERENCES data(user_id)
 )
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS data (
+    data_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    location TEXT NOT NULL
 )
-"""
+""")
+
 conn.commit()
 
 
@@ -52,6 +57,12 @@ app = FastAPI()
 app.add_middleware(
     SessionMiddleware,
     secret_key= os.getenv("secretkey")
+)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("secretkey"),
+    max_age=60 * 60 * 24  #1 day
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -156,6 +167,14 @@ async def login(
     password: Optional[str] = Form(None),
     remember_me: Optional[bool] = Form(False)
 ):
+    
+    if remember_me:
+        request.session.permanent = True
+        request.session.max_age = 60 * 60 * 24 * 30  # 30 days
+    else:
+        request.session.permanent = False
+        request.session.max_age = 60 * 60 * 2  # 2 hours
+
     if not username or not password:
         return templates.TemplateResponse(
             request=request,
