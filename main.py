@@ -13,7 +13,6 @@ def hash_password(password: str, salt: Optional[str] = None):
 
 DB_PATH = "app.db"
 
-# ----------------- SQLITE SETUP -----------------
 
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
