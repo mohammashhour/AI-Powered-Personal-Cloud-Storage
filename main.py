@@ -2,9 +2,16 @@ from typing import Optional
 from fastapi import FastAPI, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from argon2.exceptions import VerifyMismatchError
 import hashlib, os
 import sqlite3
 from argon2 import PasswordHasher
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import RedirectResponse
+import os
+from dotenv import load_dotenv, dotenv_values 
+load_dotenv() 
+
 
 ph = PasswordHasher()
 
@@ -42,6 +49,11 @@ conn.commit()
 
 app = FastAPI()
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key= os.getenv("secretkey")
+)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="pages")
@@ -53,6 +65,16 @@ async def home(request: Request):
     request=request,
     name="login.html"
 )
+
+@app.get("/dashboard")
+async def dashboard(request: Request):
+    if "user_id" not in request.session:
+        return RedirectResponse(url="/loginpage")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="Dashboard.html"
+    )
 
 @app.get("/forgotpassword")
 async def home(request: Request):
@@ -119,11 +141,12 @@ async def signup(
         (name, email, username, ph.hash(password), False),
     )
     conn.commit()
-    
-    return templates.TemplateResponse(
-        request=request,
-        name="Dashboard.html" 
-    )
+    cursor.execute("SELECT user_id FROM users WHERE username = ?", (username,))
+    user_id = cursor.fetchone()[0]
+    request.session["user_id"] = user_id
+    request.session["username"] = username
+
+    return RedirectResponse(url="/dashboard", status_code=302)
 
 
 @app.post("/login")
@@ -164,7 +187,7 @@ async def login(
             context={"error": "ERROR Invalid username or password"}
         )
 
-    return templates.TemplateResponse(
-        request=request,
-        name="Dashboard.html"
-    )
+    request.session["user_id"] = user_id
+    request.session["username"] = username
+
+    return RedirectResponse(url="/dashboard", status_code=302)
