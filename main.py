@@ -4,12 +4,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import hashlib, os
 import sqlite3
+from argon2 import PasswordHasher
 
-def hash_password(password: str, salt: Optional[str] = None):
-    if not salt:
-        salt = os.urandom(16).hex()
-    hash_ = hashlib.sha256((password + salt).encode()).hexdigest()
-    return hash_, salt
+ph = PasswordHasher()
+
 
 DB_PATH = "app.db"
 
@@ -24,7 +22,6 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
     rtpass BOOLEAN NOT NULL
 )
 """)
@@ -115,10 +112,11 @@ async def signup(
             name="signup.html",
             context={"error": "ERROR password is less than 8 characters"}
         )
-    hash_, salt = hash_password(password)
+    
+    
     cursor.execute(
-        "INSERT INTO users (name, email, username, password_hash, salt, rtpass) VALUES (?, ?, ?, ?, ?, ?)",
-        (name, email, username, hash_, salt, False),
+        "INSERT INTO users (name, email, username, password_hash, rtpass) VALUES (?, ?, ?, ?, ?)",
+        (name, email, username, ph.hash(password), False),
     )
     conn.commit()
     
@@ -141,9 +139,13 @@ async def login(
             name="login.html",
             context={"error": "ERROR Invalid username or password"}
         )
-    
-    cursor.execute("SELECT user_id, password_hash, salt, name FROM users WHERE username = ?", (username,))
+
+    cursor.execute(
+        "SELECT user_id, password_hash, name FROM users WHERE username = ?",
+        (username,)
+    )
     row = cursor.fetchone()
+
     if not row:
         return templates.TemplateResponse(
             request=request,
@@ -151,15 +153,18 @@ async def login(
             context={"error": "ERROR Invalid username or password"}
         )
 
-    user_id, stored_hash, salt, forename = row
-    hash_, _ = hash_password(password, salt)
-    if hash_ != stored_hash:
+    user_id, stored_hash, forename = row
+
+    try:
+        ph.verify(stored_hash, password)
+    except VerifyMismatchError:
         return templates.TemplateResponse(
             request=request,
             name="login.html",
             context={"error": "ERROR Invalid username or password"}
         )
+
     return templates.TemplateResponse(
         request=request,
-        name="Dashboard.html" 
+        name="Dashboard.html"
     )
