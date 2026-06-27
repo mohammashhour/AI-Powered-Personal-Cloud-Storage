@@ -26,8 +26,8 @@
             </div>
 
             <div class="input-box">
-                <input type="password" name="password" placeholder="Password" required>
-                <i class='bx bx-key' ></i>
+                <input type="password" name="password" id="password" placeholder="Password">
+                <i class='bx bx-hide' id="togglePassword"></i>
             </div>
 
             <div class="remember-forget">
@@ -46,5 +46,21 @@
             </div>
         </form>
     </div>
+    <script>
+        const password = document.getElementById("password");
+        const toggle = document.getElementById("togglePassword");
+
+        toggle.addEventListener("click", function () {
+            if (password.type === "password") {
+                password.type = "text";
+                toggle.classList.remove("bx-hide");
+                toggle.classList.add("bx-show");
+            } else {
+                password.type = "password";
+                toggle.classList.remove("bx-show");
+                toggle.classList.add("bx-hide");
+            }
+        });
+    </script>
 </body>
 </html>
