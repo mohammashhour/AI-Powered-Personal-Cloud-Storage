@@ -35,6 +35,12 @@
             </div>
             <button type="submit" class="btn">Sign up</button>
 
+            {% if error %}
+                <div class="error-msg" style="color: #ff3333; margin-top: 15px; font-size: 14px; text-align: center; font-weight: bold;">
+                    {{ error }}
+                </div>
+            {% endif %}
+
             <div class="signup">
                 <p>You have an account? <a href="/loginpage">login</a></p>
             </div>

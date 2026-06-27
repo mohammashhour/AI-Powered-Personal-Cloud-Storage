@@ -2,7 +2,14 @@ from typing import Optional
 from fastapi import FastAPI, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+import hashlib, os
 import sqlite3
+
+def hash_password(password: str, salt: Optional[str] = None):
+    if not salt:
+        salt = os.urandom(16).hex()
+    hash_ = hashlib.sha256((password + salt).encode()).hexdigest()
+    return hash_, salt
 
 DB_PATH = "app.db"
 
@@ -18,11 +25,10 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL
+    salt TEXT NOT NULL,
+    rtpass BOOLEAN NOT NULL
 )
 """)
-
-
 
 """
 cursor.execute(
@@ -52,6 +58,13 @@ async def home(request: Request):
     name="login.html"
 )
 
+@app.get("/forgotpassword")
+async def home(request: Request):
+    return templates.TemplateResponse(
+    request=request,
+    name="Forgot.html"
+)
+
 @app.get("/loginpage")
 async def home(request: Request):
     return templates.TemplateResponse(
@@ -68,7 +81,7 @@ async def signup_page(request: Request):
 
 
 @app.post("/signup")
-async def login(
+async def signup(
     request: Request, 
     username: Optional[str] = Form(None),
     name: Optional[str] = Form(None),
@@ -77,10 +90,38 @@ async def login(
     remember_me: Optional[bool] = Form(False)
 ):
 
-    print(f"Username: {username}")
-    print(f"Password: {password}")
-    print(f"name: {name}")
-    print(f"Password: {email}")
+    cursor.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+    if cursor.fetchone():
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "ERROR Username already taken"}
+        )
+    cursor.execute("SELECT 1 FROM users WHERE email = ?", (email,))
+    if cursor.fetchone():
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "ERROR email already taken"}
+        )
+    if len(username) < 3:
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "ERROR Username is less than 3 characters"}
+        )
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "ERROR password is less than 8 characters"}
+        )
+    hash_, salt = hash_password(password)
+    cursor.execute(
+        "INSERT INTO users (name, email, username, password_hash, salt, rtpass) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, email, username, hash_, salt, False),
+    )
+    conn.commit()
     
     return {"message": "signup successful"}
 
@@ -96,10 +137,24 @@ async def login(
         return templates.TemplateResponse(
             request=request,
             name="login.html",
-            context={"error": "Username and password are required"}
+            context={"error": "ERROR Invalid username or password"}
+        )
+    
+    cursor.execute("SELECT user_id, password_hash, salt, name FROM users WHERE username = ?", (username,))
+    row = cursor.fetchone()
+    if not row:
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={"error": "ERROR Invalid username or password"}
         )
 
-    print(f"Username: {username}")
-    print(f"Password: {password}")
-    
+    user_id, stored_hash, salt, forename = row
+    hash_, _ = hash_password(password, salt)
+    if hash_ != stored_hash:
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={"error": "ERROR Invalid username or password"}
+        )
     return {"message": "Login successful"}
