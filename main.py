@@ -6,6 +6,7 @@ from argon2.exceptions import VerifyMismatchError
 import hashlib, os
 import sqlite3
 from argon2 import PasswordHasher
+from httpx import request
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
 import os
@@ -84,8 +85,15 @@ async def dashboard(request: Request):
 
     return templates.TemplateResponse(
         request=request,
-        name="Dashboard.html"
+        name="Dashboard.html",
+        context={"name": request.session["name"]
+        }
     )
+
+
+@app.get("/search")
+async def search(request: Request, search: str = ""):
+    return {"query": search}
 
 @app.get("/forgotpassword")
 async def home(request: Request):
@@ -151,11 +159,13 @@ async def signup(
         "INSERT INTO users (name, email, username, password_hash, rtpass) VALUES (?, ?, ?, ?, ?)",
         (name, email, username, ph.hash(password), False),
     )
+    os.mkdir(username)
     conn.commit()
     cursor.execute("SELECT user_id FROM users WHERE username = ?", (username,))
     user_id = cursor.fetchone()[0]
     request.session["user_id"] = user_id
     request.session["username"] = username
+    request.session["name"] = name
 
     return RedirectResponse(url="/dashboard", status_code=302)
 
@@ -208,5 +218,6 @@ async def login(
 
     request.session["user_id"] = user_id
     request.session["username"] = username
+    request.session["name"] = forename
 
     return RedirectResponse(url="/dashboard", status_code=302)
