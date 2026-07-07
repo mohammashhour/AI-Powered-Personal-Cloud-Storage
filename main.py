@@ -10,12 +10,11 @@ from httpx import request
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
 import os
-from dotenv import load_dotenv, dotenv_values 
+from dotenv import load_dotenv, dotenv_values
+from fastapi import UploadFile, File
+
 load_dotenv() 
-
-
 ph = PasswordHasher()
-
 
 DB_PATH = "app.db"
 
@@ -30,7 +29,8 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    rtpass BOOLEAN NOT NULL
+    rtpass BOOLEAN NOT NULL,
+    storageused INTEGER
 )
 """)
 
@@ -46,7 +46,20 @@ CREATE TABLE IF NOT EXISTS userdata (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS data (
     data_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    location TEXT NOT NULL
+    location TEXT NOT NULL,
+    size INTEGER Not NULL
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS recentfiles(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    data_id INTEGER NOT NULL,
+    last_opened TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY(user_id) REFERENCES users(user_id),
+    FOREIGN KEY(data_id) REFERENCES data(data_id)
 )
 """)
 
@@ -81,15 +94,124 @@ async def home(request: Request):
 @app.get("/dashboard")
 async def dashboard(request: Request):
     if "user_id" not in request.session:
-        return RedirectResponse(url="/loginpage")
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+
+    cursor.execute("""
+        SELECT data.location
+        FROM recentfiles
+        JOIN data
+        ON recentfiles.data_id = data.data_id
+        WHERE recentfiles.user_id = ?
+        ORDER BY recentfiles.last_opened DESC
+        LIMIT 10
+    """, (user_id,))
+
+    recent_files = [row[0] for row in cursor.fetchall()]
+
+    shared_files = []
+
+    if os.path.exists("shared"):
+        shared_files = sorted(os.listdir("shared"))
+
+    cursor.execute(
+        "SELECT storageused FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    storage_used = row[0] if row and row[0] else 0
+
+    STORAGE_LIMIT = 150 * 1024 * 1024 * 1024
+
+    storage_percent = round(
+        (storage_used / STORAGE_LIMIT) * 100,
+        2
+    )
+
+    storage_used_gb = round(
+        storage_used / (1024 ** 3),
+        2
+    )
+
+    storage_remaining_gb = round(
+        150 - storage_used_gb,
+        2
+    )
 
     return templates.TemplateResponse(
         request=request,
         name="Dashboard.html",
-        context={"name": request.session["name"]
+        context={
+            "name": request.session["name"],
+
+            "recent_files": recent_files,
+
+            "shared_files": shared_files,
+
+            "storage_used": storage_used_gb,
+
+            "storage_remaining": storage_remaining_gb,
+
+            "storage_percent": storage_percent
         }
     )
 
+@app.post("/upload-file")
+async def upload_file(
+    request: Request,
+    file: UploadFile = File(...)
+):
+    user_id = request.session["user_id"]
+    username = request.session["username"]
+
+    # user folder
+    user_folder = os.path.join(username)
+    os.makedirs(user_folder, exist_ok=True)
+
+    file_path = os.path.join(user_folder, file.filename)
+
+    contents = await file.read()
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    size = len(contents)
+
+    # store metadata
+    cursor.execute(
+        """
+        INSERT INTO data (location, size)
+        VALUES (?, ?)
+        """,
+        (file_path, size)
+    )
+
+    data_id = cursor.lastrowid
+
+    cursor.execute(
+        """
+        INSERT INTO userdata (user_id, data_id)
+        VALUES (?, ?)
+        """,
+        (user_id, data_id)
+    )
+
+    # update storage
+    cursor.execute(
+        """
+        UPDATE users
+        SET storageused = COALESCE(storageused, 0) + ?
+        WHERE user_id = ?
+        """,
+        (size, user_id)
+    )
+
+    conn.commit()
+
+    return RedirectResponse("/dashboard", status_code=303)
 
 @app.get("/search")
 async def search(request: Request, search: str = ""):
