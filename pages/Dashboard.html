@@ -38,22 +38,22 @@
 
             <div id="dropdown" class="dropdown">
 
-                <a href="#">
+                <a href="/change-name">
                     <i class="fa-solid fa-user"></i>
                     Change Name
                 </a>
 
-                <a href="#">
+                <a href="/change-email">
                     <i class="fa-solid fa-envelope"></i>
                     Change Email
                 </a>
 
-                <a href="#">
+                <a href="/change-username">
                     <i class="fa-solid fa-at"></i>
                     Change Username
                 </a>
 
-                <a href="#">
+                <a href="/change-password">
                     <i class="fa-solid fa-lock"></i>
                     Change Password
                 </a>
@@ -150,21 +150,35 @@
             <div class="file-actions">
 
                 <button
-                    class="share-btn"
-                    onclick="shareFile('{{ file }}')">
-                    <i class="fa-solid fa-share-nodes"></i>
+                    class="menu-btn"
+                    onclick="toggleMenu(this)">
+                    <i class="fa-solid fa-ellipsis-vertical"></i>
                 </button>
 
-                <form
-                    action="/delete/{{ file }}"
-                    method="POST"
-                    onsubmit="return confirm('Delete this file?');">
+                <div class="file-menu">
 
-                    <button class="delete-btn">
-                        <i class="fa-solid fa-trash"></i>
+                    <button
+                        type="button"
+                        onclick="shareFile('{{ file }}')">
+                        <i class="fa-solid fa-share-nodes"></i>
+                        Share
                     </button>
 
-                </form>
+                    <button
+                        type="button"
+                        onclick="renameFile('{{ file }}')">
+                        <i class="fa-solid fa-pen"></i>
+                        Rename
+                    </button>
+
+                    <form action="/delete/{{ file }}" method="POST">
+                        <button type="submit">
+                            <i class="fa-solid fa-trash"></i>
+                            Delete
+                        </button>
+                    </form>
+
+                </div>
 
             </div>
 
@@ -260,6 +274,62 @@ function shareFile(filename){
     }).then(()=>location.reload());
 
 }
+
+function toggleMenu(button){
+
+    const menu = button.nextElementSibling;
+
+    document.querySelectorAll(".file-menu").forEach(m => {
+
+        if(m !== menu)
+            m.classList.remove("show");
+
+    });
+
+    menu.classList.toggle("show");
+
+}
+
+document.querySelectorAll(".menu-btn").forEach(btn=>{
+
+    btn.addEventListener("click",function(e){
+
+        e.stopPropagation();
+
+    });
+
+});
+
+function renameFile(filename){
+
+    const newName = prompt("Enter a new filename:", filename);
+
+    if(!newName)
+        return;
+
+    fetch("/rename/" + encodeURIComponent(filename),{
+
+        method:"POST",
+
+        headers:{
+            "Content-Type":"application/x-www-form-urlencoded"
+        },
+
+        body:"new_name=" + encodeURIComponent(newName)
+
+    }).then(()=>location.reload());
+
+}
+
+document.addEventListener("click", () => {
+
+    document.querySelectorAll(".file-menu").forEach(m => {
+
+        m.classList.remove("show");
+
+    });
+
+});
 
 fileInput.addEventListener("change", () => {
     if (fileInput.files.length > 0) {

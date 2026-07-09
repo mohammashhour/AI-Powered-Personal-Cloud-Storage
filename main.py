@@ -416,6 +416,242 @@ async def upload_file(
 
     return RedirectResponse("/dashboard", status_code=303)
 
+@app.post("/rename/{filename}")
+async def rename_file(
+    request: Request,
+    filename: str,
+    new_name: str = Form(...)
+):
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    username = request.session["username"]
+
+    old_path = os.path.join(username, filename)
+    new_path = os.path.join(username, new_name)
+
+    if not os.path.isfile(old_path):
+        return RedirectResponse("/dashboard", status_code=303)
+
+    # Don't overwrite another file
+    if os.path.exists(new_path):
+        return RedirectResponse("/dashboard", status_code=303)
+
+    # Rename on disk
+    os.rename(old_path, new_path)
+
+    # Update database
+    cursor.execute(
+        """
+        UPDATE data
+        SET location = ?
+        WHERE location = ?
+        """,
+        (new_path, old_path)
+    )
+
+    conn.commit()
+
+    return RedirectResponse("/dashboard", status_code=303)
+
+@app.get("/change-email")
+async def change_email_page(request: Request):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_email.html"
+    )
+
+@app.post("/change-email")
+async def change_email(
+    request: Request,
+    email: str = Form(...)
+):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+
+    # Check if email already exists
+    cursor.execute(
+        "SELECT 1 FROM users WHERE email=?",
+        (email,)
+    )
+
+    if cursor.fetchone():
+        return templates.TemplateResponse(
+            request=request,
+            name="change_email.html",
+            context={
+                "error":"Email already in use."
+            }
+        )
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET email=?
+        WHERE user_id=?
+        """,
+        (email, user_id)
+    )
+
+    conn.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_email.html",
+        context={
+            "success":"Email changed successfully."
+        }
+    )
+
+@app.get("/change-username")
+async def change_username_page(request: Request):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_username.html"
+    )
+
+@app.post("/change-username")
+async def change_username(
+    request: Request,
+    username: str = Form(...)
+):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+    old_username = request.session["username"]
+
+    # Username already exists
+    cursor.execute(
+        "SELECT 1 FROM users WHERE username=?",
+        (username,)
+    )
+
+    if cursor.fetchone():
+        return templates.TemplateResponse(
+            request=request,
+            name="change_username.html",
+            context={
+                "error":"Username already exists."
+            }
+        )
+
+    old_folder = old_username
+    new_folder = username
+
+    # Rename user's folder
+    if os.path.exists(old_folder):
+        os.rename(old_folder, new_folder)
+
+    # Update every file path
+    cursor.execute(
+        "SELECT data_id, location FROM data WHERE location LIKE ?",
+        (old_username + "/%",)
+    )
+
+    rows = cursor.fetchall()
+
+    for data_id, location in rows:
+
+        new_location = location.replace(old_username, username, 1)
+
+        cursor.execute(
+            """
+            UPDATE data
+            SET location=?
+            WHERE data_id=?
+            """,
+            (new_location, data_id)
+        )
+
+    # Update username
+    cursor.execute(
+        """
+        UPDATE users
+        SET username=?
+        WHERE user_id=?
+        """,
+        (username, user_id)
+    )
+
+    conn.commit()
+
+    # Update session
+    request.session["username"] = username
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_username.html",
+        context={
+            "success":"Username changed successfully."
+        }
+    )
+
+@app.get("/change-name")
+async def change_name_page(request: Request):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_name.html"
+    )
+
+@app.post("/change-name")
+async def change_name(
+    request: Request,
+    name: str = Form(...)
+):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+
+    if len(name.strip()) < 2:
+        return templates.TemplateResponse(
+            request=request,
+            name="change_name.html",
+            context={
+                "error": "Name must be at least 2 characters long."
+            }
+        )
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET name = ?
+        WHERE user_id = ?
+        """,
+        (name.strip(), user_id)
+    )
+
+    conn.commit()
+
+    # Update session so the navbar changes immediately
+    request.session["name"] = name.strip()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_name.html",
+        context={
+            "success": "Name changed successfully."
+        }
+    )
+
 @app.get("/download/{filename}")
 async def download_file(request: Request, filename: str):
     if "user_id" not in request.session:
@@ -470,6 +706,92 @@ async def download_file(request: Request, filename: str):
         media_type="application/octet-stream"
     )
 
+@app.get("/change-password")
+async def change_password_page(request: Request):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_password.html"
+    )
+
+@app.post("/change-password")
+async def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...)
+):
+
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+
+    cursor.execute(
+        "SELECT password_hash FROM users WHERE user_id=?",
+        (user_id,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        return RedirectResponse("/loginpage")
+
+    stored_hash = row[0]
+
+    try:
+        ph.verify(stored_hash, current_password)
+    except VerifyMismatchError:
+        return templates.TemplateResponse(
+            request=request,
+            name="change_password.html",
+            context={
+                "error": "Current password is incorrect."
+            }
+        )
+
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            request=request,
+            name="change_password.html",
+            context={
+                "error": "New passwords do not match."
+            }
+        )
+
+    if len(new_password) < 8:
+        return templates.TemplateResponse(
+            request=request,
+            name="change_password.html",
+            context={
+                "error": "Password must be at least 8 characters long."
+            }
+        )
+
+    new_hash = ph.hash(new_password)
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET password_hash=?
+        WHERE user_id=?
+        """,
+        (new_hash, user_id)
+    )
+
+    conn.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="change_password.html",
+        context={
+            "success": "Password changed successfully."
+        }
+    )
+
 @app.get("/search")
 async def search(request: Request, search: str = ""):
     if "user_id" not in request.session:
@@ -501,13 +823,6 @@ async def search(request: Request, search: str = ""):
             "search": search
         }
     )
-
-@app.get("/forgotpassword")
-async def home(request: Request):
-    return templates.TemplateResponse(
-    request=request,
-    name="Forgot.html"
-)
 
 @app.get("/logout")
 async def logout(request: Request):

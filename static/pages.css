@@ -254,10 +254,6 @@ body{
     margin-top:30px;
 }
 
-.file-card{
-    
-}
-
 .file-card:hover{
     transform:translateY(-4px);
     box-shadow:0 5px 15px rgba(0,0,0,.12);
@@ -285,10 +281,6 @@ body{
 .empty-folder i{
     color:#008081;
     margin-bottom:20px;
-}
-
-.file-card{
-    
 }
 
 .file-link{
@@ -386,12 +378,66 @@ body{
     position:absolute;
     top:10px;
     right:10px;
+}
+
+.menu-btn{
+    background:none;
+    border:none;
+    cursor:pointer;
+    font-size:20px;
+    color:#666;
+}
+
+.menu-btn:hover{
+    color:#008081;
+}
+
+.file-menu{
+    display:none;
+
+    position:absolute;
+    top:30px;
+    right:0;
+
+    width:170px;
+
+    background:white;
+
+    border-radius:10px;
+
+    box-shadow:0 5px 20px rgba(0,0,0,.2);
+
+    overflow:hidden;
+
+    z-index:100;
+}
+
+.file-menu.show{
+    display:block;
+}
+
+.file-menu button{
+    width:100%;
+    padding:12px 16px;
 
     display:flex;
-    flex-direction:row;
     align-items:center;
-    gap:8px;
-    z-index:5;
+    gap:10px;
+
+    border:none;
+    background:white;
+
+    cursor:pointer;
+
+    font-size:15px;
+}
+
+.file-menu form{
+    margin:0;
+}
+
+.file-menu button:hover{
+    background:#f5f5f5;
 }
 
 .file-actions form{
