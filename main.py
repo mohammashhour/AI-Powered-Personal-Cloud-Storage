@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse
 import os
 from dotenv import load_dotenv, dotenv_values
 from fastapi import UploadFile, File
+from fastapi.responses import RedirectResponse, FileResponse
 
 load_dotenv() 
 ph = PasswordHasher()
@@ -48,6 +49,19 @@ CREATE TABLE IF NOT EXISTS data (
     data_id INTEGER PRIMARY KEY AUTOINCREMENT,
     location TEXT NOT NULL,
     size INTEGER Not NULL
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS shared (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data_id INTEGER NOT NULL,
+    owner_id INTEGER NOT NULL,
+    shared_with INTEGER NOT NULL,
+
+    FOREIGN KEY(data_id) REFERENCES data(data_id),
+    FOREIGN KEY(owner_id) REFERENCES users(user_id),
+    FOREIGN KEY(shared_with) REFERENCES users(user_id)
 )
 """)
 
@@ -91,12 +105,76 @@ async def home(request: Request):
     name="login.html"
 )
 
+@app.post("/share/{filename}")
+async def share_file(
+    request: Request,
+    filename: str,
+    username: str = Form(...)
+):
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    owner_id = request.session["user_id"]
+    owner_username = request.session["username"]
+
+    file_path = os.path.join(owner_username, filename)
+
+    cursor.execute(
+        "SELECT data_id FROM data WHERE location=?",
+        (file_path,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        return {"error":"File not found"}
+
+    data_id = row[0]
+
+    cursor.execute(
+        "SELECT user_id FROM users WHERE username=?",
+        (username,)
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+        return {"error":"User not found"}
+
+    shared_with = row[0]
+
+    cursor.execute(
+        """
+        INSERT INTO shared(data_id, owner_id, shared_with)
+        VALUES(?,?,?)
+        """,
+        (data_id, owner_id, shared_with)
+    )
+
+    conn.commit()
+
+    return {"success":True}
+
 @app.get("/dashboard")
-async def dashboard(request: Request):
+async def dashboard(request: Request, search: str = ""):
     if "user_id" not in request.session:
         return RedirectResponse("/loginpage")
 
     user_id = request.session["user_id"]
+    username = request.session["username"]
+
+    user_folder = username
+    user_folder = username
+    user_files = []
+
+    if os.path.exists(user_folder):
+        user_files = sorted(os.listdir(user_folder))
+    
+    if search:
+        user_files = [
+            file for file in user_files
+            if search.lower() in file.lower()
+        ]
 
     cursor.execute("""
         SELECT data.location
@@ -105,15 +183,26 @@ async def dashboard(request: Request):
         ON recentfiles.data_id = data.data_id
         WHERE recentfiles.user_id = ?
         ORDER BY recentfiles.last_opened DESC
-        LIMIT 10
+        LIMIT 3
     """, (user_id,))
 
-    recent_files = [row[0] for row in cursor.fetchall()]
+    recent_files = [
+        os.path.basename(row[0])
+        for row in cursor.fetchall()
+    ]
 
-    shared_files = []
+    cursor.execute("""
+        SELECT data.location
+        FROM shared
+        JOIN data
+        ON shared.data_id = data.data_id
+        WHERE shared.shared_with = ?
+        """, (user_id,))
 
-    if os.path.exists("shared"):
-        shared_files = sorted(os.listdir("shared"))
+    shared_files = [
+            os.path.basename(row[0])
+            for row in cursor.fetchall()
+        ]
 
     cursor.execute(
         "SELECT storageused FROM users WHERE user_id=?",
@@ -146,64 +235,69 @@ async def dashboard(request: Request):
         name="Dashboard.html",
         context={
             "name": request.session["name"],
-
             "recent_files": recent_files,
-
             "shared_files": shared_files,
-
             "storage_used": storage_used_gb,
-
             "storage_remaining": storage_remaining_gb,
+            "storage_percent": storage_percent,
+            "user_files": user_files,
+            "search": search,
 
-            "storage_percent": storage_percent
-        }
-    )
+}
+)
 
-@app.post("/upload-file")
-async def upload_file(
-    request: Request,
-    file: UploadFile = File(...)
-):
+@app.post("/delete/{filename}")
+async def delete_file(request: Request, filename: str):
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
     user_id = request.session["user_id"]
     username = request.session["username"]
 
-    # user folder
-    user_folder = os.path.join(username)
-    os.makedirs(user_folder, exist_ok=True)
+    file_path = os.path.join(username, filename)
 
-    file_path = os.path.join(user_folder, file.filename)
+    if not os.path.isfile(file_path):
+        return RedirectResponse("/dashboard", status_code=303)
 
-    contents = await file.read()
+    size = os.path.getsize(file_path)
 
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    # Remove from disk
+    os.remove(file_path)
 
-    size = len(contents)
-
-    # store metadata
+    # Find the database record
     cursor.execute(
         """
-        INSERT INTO data (location, size)
-        VALUES (?, ?)
+        SELECT data_id
+        FROM data
+        WHERE location = ?
         """,
-        (file_path, size)
+        (file_path,)
     )
 
-    data_id = cursor.lastrowid
+    row = cursor.fetchone()
 
-    cursor.execute(
-        """
-        INSERT INTO userdata (user_id, data_id)
-        VALUES (?, ?)
-        """,
-        (user_id, data_id)
-    )
+    if row:
+        data_id = row[0]
 
-    # update storage
+        cursor.execute(
+            "DELETE FROM userdata WHERE data_id = ?",
+            (data_id,)
+        )
+
+        cursor.execute(
+            "DELETE FROM recentfiles WHERE data_id = ?",
+            (data_id,)
+        )
+
+        cursor.execute(
+            "DELETE FROM data WHERE data_id = ?",
+            (data_id,)
+        )
+
     cursor.execute(
         """
         UPDATE users
-        SET storageused = COALESCE(storageused, 0) + ?
+        SET storageused = storageused - ?
         WHERE user_id = ?
         """,
         (size, user_id)
@@ -213,9 +307,200 @@ async def upload_file(
 
     return RedirectResponse("/dashboard", status_code=303)
 
+@app.get("/download-shared/{filename}")
+async def download_shared_file(request: Request, filename: str):
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+
+    cursor.execute("""
+        SELECT data.location
+        FROM shared
+        JOIN data
+        ON shared.data_id = data.data_id
+        WHERE shared.shared_with = ?
+        AND data.location LIKE ?
+    """, (user_id, f"%/{filename}"))
+
+    row = cursor.fetchone()
+
+    if not row:
+        cursor.execute("""
+            SELECT data.location
+            FROM shared
+            JOIN data
+            ON shared.data_id = data.data_id
+            WHERE shared.shared_with = ?
+            AND data.location LIKE ?
+        """, (user_id, f"%\\{filename}"))
+
+        row = cursor.fetchone()
+
+    if not row:
+        return {"error": "File not found"}
+
+    file_path = row[0]
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
+
+@app.post("/upload-file")
+async def upload_file(
+    request: Request,
+    folder: str = Form(""),
+    file: UploadFile = File(...)
+):
+    user_id = request.session["user_id"]
+    username = request.session["username"]
+    data_id = cursor.lastrowid
+
+
+
+    # Root folder for this user
+    user_root = username
+
+    # Upload destination
+    destination = os.path.join(user_root, folder)
+
+    os.makedirs(destination, exist_ok=True)
+
+    file_path = os.path.join(destination, file.filename)
+
+    contents = await file.read()
+
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    size = len(contents)
+
+    cursor.execute(
+        """
+        INSERT INTO data(location,size)
+        VALUES(?,?)
+        """,
+        (file_path, size)
+    )
+
+    data_id = cursor.lastrowid
+
+    cursor.execute(
+        """
+        INSERT INTO userdata(user_id,data_id)
+        VALUES(?,?)
+        """,
+        (user_id, data_id)
+    )
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET storageused = COALESCE(storageused,0) + ?
+        WHERE user_id = ?
+        """,
+        (size, user_id)
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO recentfiles (user_id, data_id)
+        VALUES (?, ?)
+        """,
+        (user_id, data_id)
+    )
+
+    conn.commit()
+
+    return RedirectResponse("/dashboard", status_code=303)
+
+@app.get("/download/{filename}")
+async def download_file(request: Request, filename: str):
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    user_id = request.session["user_id"]
+    username = request.session["username"]
+
+    file_path = os.path.join(username, filename)
+
+    if not os.path.isfile(file_path):
+        return {"error": "File not found"}
+
+    # Find the file in the database
+    cursor.execute(
+        """
+        SELECT data_id
+        FROM data
+        WHERE location = ?
+        """,
+        (file_path,)
+    )
+
+    row = cursor.fetchone()
+
+    if row:
+        data_id = row[0]
+
+        # Remove old recent entry
+        cursor.execute(
+            """
+            DELETE FROM recentfiles
+            WHERE user_id = ? AND data_id = ?
+            """,
+            (user_id, data_id)
+        )
+
+        # Insert a new one with the current timestamp
+        cursor.execute(
+            """
+            INSERT INTO recentfiles(user_id, data_id)
+            VALUES(?, ?)
+            """,
+            (user_id, data_id)
+        )
+
+        conn.commit()
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
+
 @app.get("/search")
 async def search(request: Request, search: str = ""):
-    return {"query": search}
+    if "user_id" not in request.session:
+        return RedirectResponse("/loginpage")
+
+    username = request.session["username"]
+
+    user_folder = username
+
+    user_files = []
+
+    if os.path.exists(user_folder):
+
+        for file in os.listdir(user_folder):
+            if search.lower() in file.lower():
+                user_files.append(file)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="Dashboard.html",
+        context={
+            "name": request.session["name"],
+            "recent_files": [],
+            "shared_files": [],
+            "storage_used": 0,
+            "storage_remaining": 150,
+            "storage_percent": 0,
+            "user_files": sorted(user_files),
+            "search": search
+        }
+    )
 
 @app.get("/forgotpassword")
 async def home(request: Request):
@@ -223,6 +508,11 @@ async def home(request: Request):
     request=request,
     name="Forgot.html"
 )
+
+@app.get("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/loginpage", status_code=302)
 
 @app.get("/loginpage")
 async def home(request: Request):

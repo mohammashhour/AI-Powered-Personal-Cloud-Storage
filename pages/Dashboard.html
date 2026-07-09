@@ -17,11 +17,12 @@
     </div>
 
     <div class="search">
-        <form action="/search" method="GET">
+        <form action="/dashboard" method="GET">
             <input
                 type="search"
                 name="search"
                 placeholder="Search your files..."
+                value="{{ search }}"
             >
         </form>
     </div>
@@ -29,9 +30,44 @@
         <a href="#" class="ai">
             <img src="/static/8236324-200.png" alt="AI">
         </a>
-        <a href="#" class="user">
-            Hello {{ name }}
-        </a>
+        <div class="user-menu">
+
+            <button id="userButton" class="user">
+                Hello {{ name }}
+            </button>
+
+            <div id="dropdown" class="dropdown">
+
+                <a href="#">
+                    <i class="fa-solid fa-user"></i>
+                    Change Name
+                </a>
+
+                <a href="#">
+                    <i class="fa-solid fa-envelope"></i>
+                    Change Email
+                </a>
+
+                <a href="#">
+                    <i class="fa-solid fa-at"></i>
+                    Change Username
+                </a>
+
+                <a href="#">
+                    <i class="fa-solid fa-lock"></i>
+                    Change Password
+                </a>
+
+                <hr>
+
+                <a href="/logout" class="logout">
+                    <i class="fa-solid fa-right-from-bracket"></i>
+                    Logout
+                </a>
+
+            </div>
+
+        </div>
     </div>
 </nav>
 
@@ -70,7 +106,9 @@
                         {% for file in shared_files %}
                         <li>
                             <i class="fa-regular fa-file"></i>
-                            <span>{{ file }}</span>
+                            <a href="/download-shared/{{ file }}">
+                                {{ file }}
+                            </a>
                         </li>
                         {% endfor %}
                     {% else %}
@@ -98,15 +136,78 @@
         </div>
     </aside>
     <main class="content">
-        <h1>Welcome, {{ name }}</h1>
-        <p>
-            Select a file from the sidebar or upload a new one.
-        </p>
-    </main>
+
+    <h1>My Files</h1>
+
+    {% if user_files %}
+
+    <div class="file-grid">
+
+        {% for file in user_files %}
+
+        <div class="file-card">
+
+            <div class="file-actions">
+
+                <button
+                    class="share-btn"
+                    onclick="shareFile('{{ file }}')">
+                    <i class="fa-solid fa-share-nodes"></i>
+                </button>
+
+                <form
+                    action="/delete/{{ file }}"
+                    method="POST"
+                    onsubmit="return confirm('Delete this file?');">
+
+                    <button class="delete-btn">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+
+                </form>
+
+            </div>
+
+            <a href="/download/{{ file }}" class="file-link">
+                <i class="fa-regular fa-file fa-3x"></i>
+                <p>{{ file }}</p>
+            </a>
+
+        </div>
+
+        {% endfor %}
+
+    </div>
+
+    {% else %}
+
+    <div class="empty-folder">
+
+        <i class="fa-regular fa-folder-open fa-5x"></i>
+
+        <h2>Your drive is empty</h2>
+
+        <p>Upload your first file.</p>
+
+    </div>
+
+    {% endif %}
+
+</main>
 </div>
 <div class="upload">
-    <form id="uploadForm" action="/upload-file" method="POST" enctype="multipart/form-data">
-        <input type="file" id="fileInput" name="file" hidden>
+    <form id="uploadForm"
+          action="/upload-file"
+          method="POST"
+          enctype="multipart/form-data">
+
+        <input
+            type="file"
+            id="fileInput"
+            name="file"
+            hidden
+        >
+
         <button type="button" id="uploadBtn">
             <i class="fa-solid fa-upload"></i>
         </button>
@@ -119,13 +220,46 @@ const sidebar = document.getElementById("sidebar");
 const toggle = document.getElementById("toggleSidebar");
 const uploadBtn = document.getElementById("uploadBtn");
 const fileInput = document.getElementById("fileInput");
+const userButton = document.getElementById("userButton");
+const dropdown = document.getElementById("dropdown");
+
+userButton.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle("show");
+});
+
+document.addEventListener("click", () => {
+    dropdown.classList.remove("show");
+});
+
 toggle.addEventListener("click", () => {
     sidebar.classList.toggle("collapsed");
 });
 
 uploadBtn.addEventListener("click", () => {
-    fileInput.click();
+    fileInput.click();     // Opens the Windows file explorer
 });
+
+function shareFile(filename){
+
+    const username = prompt("Share with which username?");
+
+    if(!username)
+        return;
+
+    fetch("/share/" + encodeURIComponent(filename),{
+
+        method:"POST",
+
+        headers:{
+            "Content-Type":"application/x-www-form-urlencoded"
+        },
+
+        body:"username=" + encodeURIComponent(username)
+
+    }).then(()=>location.reload());
+
+}
 
 fileInput.addEventListener("change", () => {
     if (fileInput.files.length > 0) {
