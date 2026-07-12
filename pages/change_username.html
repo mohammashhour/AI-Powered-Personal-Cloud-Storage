@@ -4,47 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Change Username</title>
-
     <link rel="stylesheet" href="/static/style1.css">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
 </head>
-
 <body>
-
 <div class="wrapper">
-
     <form action="/change-username" method="POST">
-
         <h1>Change Username</h1>
-
         {% if error %}
             <p style="color:red;">{{ error }}</p>
         {% endif %}
-
         {% if success %}
             <p style="color:green;">{{ success }}</p>
         {% endif %}
-
         <div style="color:black;margin-bottom:15px;">
             Enter your new username.
         </div>
-
         <div class="input-box">
             <input
                 type="text"
                 name="username"
                 placeholder="New Username"
                 required>
-
             <i class='bx bxs-user'></i>
         </div>
-
         <button type="submit" class="btn">
             Change Username
         </button>
-
     </form>
-
 </div>
 
 </body>

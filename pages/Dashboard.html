@@ -27,39 +27,31 @@
         </form>
     </div>
     <div class="right">
-        <a href="#" class="ai">
+        <button id="aiButton" class="ai-btn">
             <img src="/static/8236324-200.png" alt="AI">
-        </a>
+        </button>
         <div class="user-menu">
-
             <button id="userButton" class="user">
                 Hello {{ name }}
             </button>
-
             <div id="dropdown" class="dropdown">
-
                 <a href="/change-name">
                     <i class="fa-solid fa-user"></i>
                     Change Name
                 </a>
-
                 <a href="/change-email">
                     <i class="fa-solid fa-envelope"></i>
                     Change Email
                 </a>
-
                 <a href="/change-username">
                     <i class="fa-solid fa-at"></i>
                     Change Username
                 </a>
-
                 <a href="/change-password">
                     <i class="fa-solid fa-lock"></i>
                     Change Password
                 </a>
-
                 <hr>
-
                 <a href="/logout" class="logout">
                     <i class="fa-solid fa-right-from-bracket"></i>
                     Logout
@@ -138,75 +130,51 @@
     <main class="content">
 
     <h1>My Files</h1>
-
     {% if user_files %}
-
     <div class="file-grid">
-
         {% for file in user_files %}
-
         <div class="file-card">
-
             <div class="file-actions">
-
                 <button
                     class="menu-btn"
                     onclick="toggleMenu(this)">
                     <i class="fa-solid fa-ellipsis-vertical"></i>
                 </button>
-
                 <div class="file-menu">
-
                     <button
                         type="button"
                         onclick="shareFile('{{ file }}')">
                         <i class="fa-solid fa-share-nodes"></i>
                         Share
                     </button>
-
                     <button
                         type="button"
                         onclick="renameFile('{{ file }}')">
                         <i class="fa-solid fa-pen"></i>
                         Rename
                     </button>
-
                     <form action="/delete/{{ file }}" method="POST">
                         <button type="submit">
                             <i class="fa-solid fa-trash"></i>
                             Delete
                         </button>
                     </form>
-
                 </div>
-
             </div>
-
             <a href="/download/{{ file }}" class="file-link">
                 <i class="fa-regular fa-file fa-3x"></i>
                 <p>{{ file }}</p>
             </a>
-
         </div>
-
         {% endfor %}
-
     </div>
-
     {% else %}
-
     <div class="empty-folder">
-
         <i class="fa-regular fa-folder-open fa-5x"></i>
-
         <h2>Your drive is empty</h2>
-
         <p>Upload your first file.</p>
-
     </div>
-
     {% endif %}
-
 </main>
 </div>
 <div class="upload">
@@ -214,20 +182,41 @@
           action="/upload-file"
           method="POST"
           enctype="multipart/form-data">
-
         <input
             type="file"
             id="fileInput"
             name="file"
             hidden
         >
-
         <button type="button" id="uploadBtn">
             <i class="fa-solid fa-upload"></i>
         </button>
     </form>
 </div>
 
+<div id="aiPanel" class="ai-panel">
+    <div class="ai-header">
+        <h2>AI Assistant</h2>
+        <button id="closeAI">
+            <i class="fa-solid fa-xmark"></i>
+        </button>
+    </div>
+    <div id="chatMessages" class="chat-messages">
+        <div class="ai-message">
+            Hello! How can I help you?
+        </div>
+    </div>
+    <div class="chat-input">
+        <input
+            type="text"
+            id="chatInput"
+            placeholder="Ask about your files..."
+        >
+        <button id="sendChat">
+            <i class="fa-solid fa-paper-plane"></i>
+        </button>
+    </div>
+</div>
 
 <script>
 const sidebar = document.getElementById("sidebar");
@@ -236,99 +225,126 @@ const uploadBtn = document.getElementById("uploadBtn");
 const fileInput = document.getElementById("fileInput");
 const userButton = document.getElementById("userButton");
 const dropdown = document.getElementById("dropdown");
+const aiButton = document.getElementById("aiButton");
+const aiPanel = document.getElementById("aiPanel");
+const closeAI = document.getElementById("closeAI");
+const chatInput = document.getElementById("chatInput");
+const sendChat = document.getElementById("sendChat");
+const chatMessages = document.getElementById("chatMessages");
 
+aiButton.addEventListener("click", () => {
+    aiPanel.classList.add("show");
+});
+closeAI.addEventListener("click", () => {
+    aiPanel.classList.remove("show");
+});
+function sendMessage(){
+    const text = chatInput.value.trim();
+    if(text === "")
+        return;
+    chatMessages.innerHTML +=
+        `<div class="user-message">${text}</div>`;
+    chatInput.value = "";
+fetch("/ai-search",{
+
+    method:"POST",
+
+    headers:{
+        "Content-Type":"application/x-www-form-urlencoded"
+    },
+
+    body:"query="+encodeURIComponent(text)
+
+})
+.then(r=>r.json())
+.then(results=>{
+    if(results.length===0){
+        chatMessages.innerHTML +=
+        `<div class="ai-message">
+            No matching files found.
+        </div>`;
+    }else{
+        let html = "";
+        results.forEach(file=>{
+            html += `
+            <div class="ai-message">
+                <b>${file.file}</b><br><br>
+                <a href="/download/${encodeURIComponent(file.file)}">
+                    Download
+                </a>
+            </div>
+            `;
+        });
+        chatMessages.innerHTML += html;
+    }
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+});
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+sendChat.addEventListener("click", sendMessage);
+chatInput.addEventListener("keypress", function(e){
+    if(e.key==="Enter"){
+        e.preventDefault();
+        sendMessage();
+    }
+});
 userButton.addEventListener("click", (e) => {
     e.stopPropagation();
     dropdown.classList.toggle("show");
 });
-
 document.addEventListener("click", () => {
     dropdown.classList.remove("show");
 });
-
 toggle.addEventListener("click", () => {
     sidebar.classList.toggle("collapsed");
 });
-
 uploadBtn.addEventListener("click", () => {
-    fileInput.click();     // Opens the Windows file explorer
+    fileInput.click();  
 });
-
 function shareFile(filename){
-
     const username = prompt("Share with which username?");
-
     if(!username)
         return;
-
     fetch("/share/" + encodeURIComponent(filename),{
-
         method:"POST",
-
         headers:{
             "Content-Type":"application/x-www-form-urlencoded"
         },
-
         body:"username=" + encodeURIComponent(username)
-
     }).then(()=>location.reload());
-
 }
 
 function toggleMenu(button){
-
     const menu = button.nextElementSibling;
-
     document.querySelectorAll(".file-menu").forEach(m => {
-
         if(m !== menu)
             m.classList.remove("show");
-
     });
-
     menu.classList.toggle("show");
-
 }
 
 document.querySelectorAll(".menu-btn").forEach(btn=>{
-
     btn.addEventListener("click",function(e){
-
         e.stopPropagation();
-
     });
-
 });
 
 function renameFile(filename){
-
     const newName = prompt("Enter a new filename:", filename);
-
     if(!newName)
         return;
-
     fetch("/rename/" + encodeURIComponent(filename),{
-
         method:"POST",
-
         headers:{
             "Content-Type":"application/x-www-form-urlencoded"
         },
-
         body:"new_name=" + encodeURIComponent(newName)
-
     }).then(()=>location.reload());
-
 }
-
 document.addEventListener("click", () => {
-
     document.querySelectorAll(".file-menu").forEach(m => {
-
         m.classList.remove("show");
-
     });
-
 });
 
 fileInput.addEventListener("change", () => {

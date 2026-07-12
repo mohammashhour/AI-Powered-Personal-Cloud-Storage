@@ -13,6 +13,9 @@ import os
 from dotenv import load_dotenv, dotenv_values
 from fastapi import UploadFile, File
 from fastapi.responses import RedirectResponse, FileResponse
+from index_file import index_file
+from search_ai import search_files
+from fastapi import Form
 
 load_dotenv() 
 ph = PasswordHasher()
@@ -357,26 +360,14 @@ async def upload_file(
     user_id = request.session["user_id"]
     username = request.session["username"]
     data_id = cursor.lastrowid
-
-
-
-    # Root folder for this user
     user_root = username
-
-    # Upload destination
     destination = os.path.join(user_root, folder)
-
     os.makedirs(destination, exist_ok=True)
-
     file_path = os.path.join(destination, file.filename)
-
     contents = await file.read()
-
     with open(file_path, "wb") as f:
         f.write(contents)
-
     size = len(contents)
-
     cursor.execute(
         """
         INSERT INTO data(location,size)
@@ -384,9 +375,7 @@ async def upload_file(
         """,
         (file_path, size)
     )
-
     data_id = cursor.lastrowid
-
     cursor.execute(
         """
         INSERT INTO userdata(user_id,data_id)
@@ -394,7 +383,6 @@ async def upload_file(
         """,
         (user_id, data_id)
     )
-
     cursor.execute(
         """
         UPDATE users
@@ -403,7 +391,6 @@ async def upload_file(
         """,
         (size, user_id)
     )
-
     cursor.execute(
         """
         INSERT INTO recentfiles (user_id, data_id)
@@ -411,10 +398,49 @@ async def upload_file(
         """,
         (user_id, data_id)
     )
-
     conn.commit()
 
+    index_file(
+        file_path=file_path,
+        user_id=user_id,
+        username=username,
+        data_id=data_id
+    )
+
     return RedirectResponse("/dashboard", status_code=303)
+
+@app.post("/ai-search")
+async def ai_search(
+    request: Request,
+    query: str = Form(...)
+):
+
+    user_id = request.session["user_id"]
+
+    results = search_files(
+        query,
+        user_id
+    )
+
+    output = []
+
+    for result in results:
+
+        payload = result.payload
+
+        output.append({
+
+            "file": payload["file"],
+
+            "path": payload["path"],
+
+            "score": result.score,
+
+            "text": payload["text"][:200]
+
+        })
+
+    return output
 
 @app.post("/rename/{filename}")
 async def rename_file(
@@ -792,37 +818,6 @@ async def change_password(
         }
     )
 
-@app.get("/search")
-async def search(request: Request, search: str = ""):
-    if "user_id" not in request.session:
-        return RedirectResponse("/loginpage")
-
-    username = request.session["username"]
-
-    user_folder = username
-
-    user_files = []
-
-    if os.path.exists(user_folder):
-
-        for file in os.listdir(user_folder):
-            if search.lower() in file.lower():
-                user_files.append(file)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="Dashboard.html",
-        context={
-            "name": request.session["name"],
-            "recent_files": [],
-            "shared_files": [],
-            "storage_used": 0,
-            "storage_remaining": 150,
-            "storage_percent": 0,
-            "user_files": sorted(user_files),
-            "search": search
-        }
-    )
 
 @app.get("/logout")
 async def logout(request: Request):
