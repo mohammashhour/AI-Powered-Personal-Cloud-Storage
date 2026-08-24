@@ -15,8 +15,6 @@ The system understands the meaning of the request and retrieves the most relevan
 
 My family and I constantly run into the problem where we run out of storage on google drive and some of the file names are badly named where finding a single file can take a significant amount of time.
 
-# 
-
 # Features
 
 - Cloud Storage
